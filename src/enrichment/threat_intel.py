@@ -11,7 +11,7 @@ class ThreatIntelEnricher:
         self.vt_api_key = api_keys.get('virustotal')
         self.abuseipdb_key = api_keys.get('abuseipdb')
         self.cache = cache_manager
-        self.rate_limits = {'vt' : 0. 'abuseipdb' : 0}
+        self.rate_limits = {'vt' : 0, 'abuseipdb' : 0}
 
 
     def enrich_ip(self, ip_address: str) -> Dict:
@@ -93,3 +93,30 @@ class ThreatIntelEnricher:
 
             self.cache.set(f"hash:{file_hash}", enrichment, ttl=86400)
             return enrichment
+        
+        def _query_virustotal_hash(self, file_hash: str) -> Optional[Dict]:
+            """Query VirusToatal for file hash"""
+
+            if not self.vt_api_key:
+                return None
+            
+            self._rate_limit_check('vt')
+
+            url = f"https://www.virustotal.com/api/v3/files/{file_hash}"
+            headers = {'x-apikey': self.vt_api_key}
+
+            try:
+                response = requests.get(url, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    return response.json().get('data', {})
+            except requests.RequestException as e:
+                print(f"VirusTotal query failed: {e}")
+            
+            return None
+        
+        def _rate_limit_check(self, source: str):
+            """Simple rate limiting check"""
+            current_time = time.time()
+            if current_time - self.rate_limits[source] < 1:
+                time.sleep(1)
+            self.rate_limits[source] = current_time

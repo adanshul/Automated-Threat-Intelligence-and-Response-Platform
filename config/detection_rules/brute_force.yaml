@@ -1,0 +1,22 @@
+name: "SSH Brute Force Detection"
+id: "rule001"
+severity: "high"
+description: "Detects multiple failed SSH login attempts indicating a potential brute force attack."
+mitre_attack:
+  - T1110.001
+conditions:
+  - field: "event_type"
+    operator: "equals"
+    value: "authentication_failure"
+  - field: "protocol"
+    operator: "equals"
+    value: "ssh"
+aggregation:
+  field: "source_ip"
+  count: 5
+  timeframe: 300 # 5 minutes
+actions:
+  - type: "alert"
+    priority: "high"
+  - type: "block_ip"
+    duration: 3600 # 1 hour

@@ -1,7 +1,7 @@
 import re
 from typing import Dict, List
 
-Class LogParser:
+class LogParser:
     """Parse various Log formats"""
 
     @staticmethod
@@ -10,7 +10,7 @@ Class LogParser:
         iocs = {
             'ip_addresses': [],
             'domains': [],
-            'file_hashes': []
+            'file_hashes': [],
             'urls': []
         }
 

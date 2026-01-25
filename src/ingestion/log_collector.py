@@ -4,7 +4,7 @@ from typing import List, Dict
 from datetime import datetime
 import logging
 
-Class LogCollector:
+class LogCollector:
     """Collects and normalizes logs from various sources."""
     def __init__(self, config: Dict):
         self.config = config

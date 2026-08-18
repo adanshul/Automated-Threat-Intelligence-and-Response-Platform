@@ -1,103 +1,169 @@
-import yaml
+"""YAML detection rule evaluation."""
+
+from __future__ import annotations
+
 import re
-from typing import List, Dict
-from datetime import datetime, timedata, timedelta
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Dict, List
+from uuid import uuid4
+
+import yaml
+
 
 class DetectionRuleEngine:
     """Execute detection rules against normalized events."""
 
     def __init__(self, rules_directory: str):
         self.rules = self._load_rules(rules_directory)
-        self.event_buffer = defaultdict(list)
+        self.event_buffer: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
 
-    def _load_rules(self, directory: str) -> List[Dict]:
+    def _load_rules(self, directory: str) -> List[Dict[str, Any]]:
         """Load YAML detection rules from the specified directory."""
-        rules = []
-        import os
-        for filename in os.listdir(directory):
-            if filename.endswith('.yaml') or filename.endswith('.yml'):
-                with open(os.path.join(directory, filename), 'r') as f:
-                    rule = yaml.safe_load(f)
-                    rules.append(rule)
+        rules_path = Path(directory)
+        if not rules_path.is_dir():
+            raise FileNotFoundError(f"Rules directory does not exist: {rules_path}")
+
+        rules: List[Dict[str, Any]] = []
+        for filename in sorted((*rules_path.glob("*.yaml"), *rules_path.glob("*.yml"))):
+            with filename.open("r", encoding="utf-8") as rule_file:
+                rule = yaml.safe_load(rule_file)
+            if rule is None:
+                continue
+            self._validate_rule(rule, filename)
+            rules.append(rule)
         return rules
-    
-def evaluate_event(self, event: Dict) -> List[Dict]:
-    """Evaluate event against all detection rules."""
-    triggered_rules = []
 
-    for rule in self.rules:
-        if self._check_conditions(event, rule['conditions']):
-            # Check if rule requires aggregation
-            if 'aggregation' in rule:
-                if self._check_aggregation(event, rule):
-                    triggered_rules.append(self._create_alert(event, rule))
-                else:
-                    triggered_rules.append(self._create_alert(event, rule))
-    return triggered_rules
+    @staticmethod
+    def _validate_rule(rule: Any, filename: Path) -> None:
+        if not isinstance(rule, dict):
+            raise ValueError(f"Rule in {filename} must be a mapping")
 
-def _check_conditions(self, event: Dict, conditions: List[Dict]) -> bool:
-    """Check if event matches all conditions."""
-    for condition in conditions:
-        field = condition['field']
-        operator = condition['operator']
+        required = {"name", "id", "severity", "description", "conditions"}
+        missing = sorted(required - rule.keys())
+        if missing:
+            raise ValueError(f"Rule in {filename} is missing: {', '.join(missing)}")
+        if not isinstance(rule["conditions"], list) or not rule["conditions"]:
+            raise ValueError(f"Rule in {filename} must have at least one condition")
 
-        if field not in event:
-            return False
-        
-        event_value = event[field]
+        for condition in rule["conditions"]:
+            if not isinstance(condition, dict):
+                raise ValueError(f"Every condition in {filename} must be a mapping")
+            operator = condition.get("operator")
+            if operator not in {"equals", "contains", "regex"}:
+                raise ValueError(f"Unsupported operator {operator!r} in {filename}")
+            if "field" not in condition:
+                raise ValueError(f"Condition without a field in {filename}")
+            if operator == "regex":
+                try:
+                    re.compile(condition["value"])
+                except (KeyError, TypeError, re.error) as exc:
+                    raise ValueError(f"Invalid regex condition in {filename}: {exc}") from exc
+            elif operator == "equals" and "value" not in condition:
+                raise ValueError(f"Equals condition without a value in {filename}")
+            elif operator == "contains" and not (
+                "value" in condition or "values" in condition
+            ):
+                raise ValueError(f"Contains condition without a value in {filename}")
 
-        if operator == 'equals':
-            if event_value != condition['value']:
+        if "aggregation" in rule:
+            aggregation = rule["aggregation"]
+            if not isinstance(aggregation, dict):
+                raise ValueError(f"Aggregation in {filename} must be a mapping")
+            for key in ("field", "count", "timeframe"):
+                if key not in aggregation:
+                    raise ValueError(f"Aggregation in {filename} is missing {key!r}")
+            try:
+                is_positive = aggregation["count"] >= 1 and aggregation["timeframe"] >= 1
+            except TypeError as exc:
+                raise ValueError(
+                    f"Aggregation count and timeframe must be numeric in {filename}"
+                ) from exc
+            if not is_positive:
+                raise ValueError(
+                    f"Aggregation count and timeframe must be positive in {filename}"
+                )
+
+    def evaluate_event(self, event: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Evaluate one event against every loaded rule."""
+        triggered_rules: List[Dict[str, Any]] = []
+        for rule in self.rules:
+            if not self._check_conditions(event, rule["conditions"]):
+                continue
+            if "aggregation" in rule and not self._check_aggregation(event, rule):
+                continue
+            triggered_rules.append(self._create_alert(event, rule))
+        return triggered_rules
+
+    def _check_conditions(
+        self, event: Dict[str, Any], conditions: List[Dict[str, Any]]
+    ) -> bool:
+        """Return true when every condition matches the event."""
+        for condition in conditions:
+            field = condition["field"]
+            if field not in event:
                 return False
-            
-        elif operator == 'contains':
-            values = condition.get('values', [condition.get('value')])
-            if not any(val.lower() in str(event_value).lower() for val in values):
+
+            operator = condition["operator"]
+            event_value = event[field]
+            if operator == "equals" and event_value != condition.get("value"):
                 return False
-            
-        elif operator == 'regex':
-            if not re.search(condition['value'], str(event_value), re.IGNORECASE):
+            if operator == "contains":
+                values = condition.get("values")
+                if values is None:
+                    values = [condition.get("value")]
+                if not any(
+                    value is not None
+                    and str(value).lower() in str(event_value).lower()
+                    for value in values
+                ):
+                    return False
+            if operator == "regex" and not re.search(
+                condition["value"], str(event_value), re.IGNORECASE
+            ):
                 return False
-            
-    return True
+        return True
 
-def _check_aggregation(self, event: Dict, rule: Dict) -> bool:
-    """Check if aggregation threshold is met"""
-    agg_config = rule['aggregation']
-    field = agg_config['field']
-    count_threshold = agg_config['count']
-    timeframe = agg_config['timeframe']  # in seconds
+    def _check_aggregation(self, event: Dict[str, Any], rule: Dict[str, Any]) -> bool:
+        """Track matching events and return whether the threshold is met."""
+        aggregation = rule["aggregation"]
+        group_value = event.get(aggregation["field"], "unknown")
+        key = f"{rule['id']}:{group_value}"
+        event_time = self._parse_timestamp(event.get("timestamp"))
+        self.event_buffer[key].append({"timestamp": event_time, "event": event})
 
-    key = f"{rule['id']}:{event.get(field, 'unknown')}"
+        cutoff = event_time - timedelta(seconds=aggregation["timeframe"])
+        self.event_buffer[key] = [
+            buffered
+            for buffered in self.event_buffer[key]
+            if cutoff <= buffered["timestamp"] <= event_time
+        ]
+        return len(self.event_buffer[key]) >= aggregation["count"]
 
-    # Add event to buffer 
-    self.event_buffer[key].append({
-        'timestamp': datetime.fromisoformat(event['timestamp']),
-        'event': event
-    })
+    @staticmethod
+    def _parse_timestamp(value: Any) -> datetime:
+        if value is None:
+            return datetime.now(timezone.utc)
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
 
-    # Remove old events outside the timeframe
-    cutoff_time = datetime.utcnow() - timedelta(seconds=timeframe)
-    self.event_buffer[key] = [
-        e for e in self.event_buffer[key] 
-        if e['timestamp'] >= cutoff_time
-    ]
-
-    # Check if count threshold is met
-    return len(self.event_buffer[key]) >= count_threshold
-
-def _create_alert(self, event: Dict, rule: Dict) -> Dict:
-    """Create an alert dictionary based on the triggered rule and event."""
-    alert = {
-            'alert_id': f"alert_{datetime.utcnow().timestamp()}",
-            'timestamp': datetime.utcnow().isoformat(),
-            'rule_name': rule['name'],
-            'rule_id': rule['id'],
-            'severity': rule['severity'],
-            'description': rule['description'],
-            'mitre_attack': rule.get('mitre_attack', []),
-            'actions': rule.get('actions', []),
-            'event': event
-    }
-    
+    @staticmethod
+    def _create_alert(event: Dict[str, Any], rule: Dict[str, Any]) -> Dict[str, Any]:
+        """Create an alert dictionary for a triggered rule."""
+        return {
+            "alert_id": f"alert_{uuid4().hex}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "rule_name": rule["name"],
+            "rule_id": rule["id"],
+            "severity": rule["severity"],
+            "description": rule["description"],
+            "mitre_attack": rule.get("mitre_attack", []),
+            "actions": rule.get("actions", []),
+            "event": event,
+        }

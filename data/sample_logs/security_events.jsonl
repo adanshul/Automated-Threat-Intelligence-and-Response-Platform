@@ -1,0 +1,6 @@
+{"timestamp":"2026-01-01T12:00:00Z","event_type":"authentication_failure","protocol":"ssh","source_ip":"203.0.113.42","user":"admin"}
+{"timestamp":"2026-01-01T12:01:00Z","event_type":"authentication_failure","protocol":"ssh","source_ip":"203.0.113.42","user":"root"}
+{"timestamp":"2026-01-01T12:02:00Z","event_type":"authentication_failure","protocol":"ssh","source_ip":"203.0.113.42","user":"ubuntu"}
+{"timestamp":"2026-01-01T12:03:00Z","event_type":"authentication_failure","protocol":"ssh","source_ip":"203.0.113.42","user":"service"}
+{"timestamp":"2026-01-01T12:04:00Z","event_type":"authentication_failure","protocol":"ssh","source_ip":"203.0.113.42","user":"administrator"}
+{"timestamp":"2026-01-01T12:05:00Z","event_type":"process_creation","Computer":"workstation-01","User":"analyst","Image":"C:\\Windows\\System32\\notepad.exe","CommandLine":"notepad.exe","ParentImage":"C:\\Windows\\explorer.exe","ProcessId":"1234"}

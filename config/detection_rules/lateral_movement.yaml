@@ -1,0 +1,16 @@
+name: "Remote Administration Tool Execution"
+id: "rule002"
+severity: "medium"
+description: "Detects common remote administration tools used for lateral movement."
+mitre_attack:
+  - T1021
+conditions:
+  - field: "event_type"
+    operator: "equals"
+    value: "process_creation"
+  - field: "process_name"
+    operator: "contains"
+    values: ["psexec", "wmic.exe", "mstsc.exe"]
+actions:
+  - type: "alert"
+    priority: "medium"
